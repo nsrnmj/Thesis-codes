@@ -277,3 +277,32 @@ for epoch in range(num_epochs):
 if best_model is not None:
     torch.save(best_model, 'best_model.pth')
 
+
+test_predict = model(test_x) # predict Weibull parameters using covariates
+# test_predict = test_predict.resize_(p, 4) # put into (,2) array
+test_predict = pd.DataFrame(test_predict.detach().numpy()) # convert to dataframe
+test_predict.columns = ["pred_alpha", "pred_beta", "pred_gamma","pred_landa"] # name columns
+test_result = df_test.copy()
+test_result.reset_index(inplace = True) # reset the index (before concat - probably better way of doing this)
+test_result = pd.concat([test_result, test_predict], axis=1) # results = test data plus predictions
+test_result.set_index("index", drop=True, inplace=True) # recover the index (after concat - probably better way of doing this)
+t_max = df_test["time"].max()
+num_vals = max(math.ceil(t_max), 50)
+t_vals = np.linspace(0, t_max, num_vals)
+surv =  weibull_surv(t_vals, test_result["pred_alpha"].to_numpy(),
+                     test_result["pred_beta"].to_numpy(),
+                     test_result["pred_gamma"].to_numpy(),
+                     test_result["pred_landa"].to_numpy())
+surv = pd.DataFrame(data=surv, index=t_vals)
+
+test_time = df_test['time'].values
+test_status = df_test['death'].values
+
+#evaluating the model
+ev = EvalSurv(surv, test_time, test_status, censor_surv='km')
+
+ev.concordance_td()
+
+ev.integrated_brier_score(time_grid)
+
+
