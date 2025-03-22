@@ -58,91 +58,7 @@ def weibull_activate(weibull_param):
     d = torch.reshape(d, (d.shape[0], 1))
     return torch.cat((a, b, c, d), axis=1)
 
-
-# Autoencoder architecture
-lr = 1e-6
-input_dim =  p
-
-
-import torch
-import torch.nn as nn
-
-# Define the Autoencoder class (AE)
-class AE(nn.Module):
-    def __init__(self, p):
-        super().__init__()
-        self.encoder_hidden_layer = nn.Linear(in_features=p, out_features=35)
-        self.encoder_output_layer = nn.Linear(in_features=35, out_features=31)
-        self.decoder_hidden_layer = nn.Linear(in_features=31, out_features=35)
-        self.decoder_output_layer = nn.Linear(in_features=35, out_features=p)
-
-    def forward(self, features):
-        activation = torch.relu(self.encoder_hidden_layer(features))
-        code = torch.relu(self.encoder_output_layer(activation))
-        activation = torch.relu(self.decoder_hidden_layer(code))
-        reconstructed = self.decoder_output_layer(activation)
-        return reconstructed
-
-
-# Define the Mean Squared Error loss for autoencoder
-def reconstruction_loss(original, reconstructed):
-    return nn.functional.mse_loss(reconstructed, original)
-
-# Assume `train_x` and `val_x` are the training and validation data
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
-# Move data to the device
-train_x = train_x.to(device)
-val_x = val_x.to(device)
-
-# Initialize the autoencoder model, optimizer, and learning rate scheduler
-model = AE(p=train_x.shape[1]).to(device)
-optimizer = torch.optim.RAdam(model.parameters(), lr=0.01)  # Changed to Adam
-scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.5)
-
-
-
-activation1 = {}
-activation2 = {}
-activation3 = {}
-
-def get_activation1(name):
-    def hook1(model, input, output1):
-        activation1[name] = output1.detach()
-    return hook1
-
-def get_activation2(name):
-    def hook2(model, input, output2):
-        activation2[name] = output2.detach()
-    return hook2
-
-def get_activation3(name):
-    def hook3(model, input, output3):
-        activation3[name] = output3.detach()
-    return hook3
-
-
-
-model1 = AE(p=train_x.shape[1]).to(device)
-model2 = AE(p=train_x.shape[1]).to(device)
-model3 = AE(p=train_x.shape[1]).to(device)
-model1.decoder_output_layer.register_forward_hook(get_activation1('decoder_output_layer'))
-model2.decoder_output_layer.register_forward_hook(get_activation2('decoder_output_layer'))
-model3.decoder_output_layer.register_forward_hook(get_activation3('decoder_output_layer'))
-
-#x = torch.randn(1, p)
-#output = model(x)
-#print(activation['fc2'])
-output1 = model1(train_x)
-output2 = model2(test_x)
-output3 = model3(val_x)
-
-recons_train =  activation1['decoder_output_layer']
-recons_test =  activation2['decoder_output_layer']
-recons_valid =  activation3['decoder_output_layer']
-
-
-train_x = recons_train
+train_x = recons_train #get from AE model
 test_x = recons_test
 val_x = recons_valid
 
@@ -276,33 +192,4 @@ for epoch in range(num_epochs):
 # Optionally, save the best model
 if best_model is not None:
     torch.save(best_model, 'best_model.pth')
-
-
-test_predict = model(test_x) # predict Weibull parameters using covariates
-# test_predict = test_predict.resize_(p, 4) # put into (,2) array
-test_predict = pd.DataFrame(test_predict.detach().numpy()) # convert to dataframe
-test_predict.columns = ["pred_alpha", "pred_beta", "pred_gamma","pred_landa"] # name columns
-test_result = df_test.copy()
-test_result.reset_index(inplace = True) # reset the index (before concat - probably better way of doing this)
-test_result = pd.concat([test_result, test_predict], axis=1) # results = test data plus predictions
-test_result.set_index("index", drop=True, inplace=True) # recover the index (after concat - probably better way of doing this)
-t_max = df_test["time"].max()
-num_vals = max(math.ceil(t_max), 50)
-t_vals = np.linspace(0, t_max, num_vals)
-surv =  weibull_surv(t_vals, test_result["pred_alpha"].to_numpy(),
-                     test_result["pred_beta"].to_numpy(),
-                     test_result["pred_gamma"].to_numpy(),
-                     test_result["pred_landa"].to_numpy())
-surv = pd.DataFrame(data=surv, index=t_vals)
-
-test_time = df_test['time'].values
-test_status = df_test['death'].values
-
-#evaluating the model
-ev = EvalSurv(surv, test_time, test_status, censor_surv='km')
-
-ev.concordance_td()
-
-ev.integrated_brier_score(time_grid)
-
 
